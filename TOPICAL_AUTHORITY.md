@@ -55,4 +55,3 @@ Repository audit:
 ## First publication wave
 
 Publish the twelve P0 briefs in the catalog only after verifying that each proposed slug is absent from the deployed site, reconciling overlapping legacy pages, and assigning named evidence owners. Measure qualified enquiries, specification completeness, and assisted conversions—not raw page count.
-

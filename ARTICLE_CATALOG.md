@@ -97,4 +97,3 @@ This catalog expands every parent topic into six non-geographic briefs. Working 
 | `layanan/*` regional hierarchy | Commercial coverage evidence | Consolidate thin duplicates into canonical service/material/use-case routes; do not treat hierarchy depth as topical coverage. |
 | Five `blog/*` pages | Closest matching catalog owner | Keep/rewrite/merge by primary intent; preserve useful URLs when evidence supports them. |
 | Five `produk/*` pages | Transactional product intent | Articles link to products; articles do not duplicate price, availability, or quotation intent. |
-
