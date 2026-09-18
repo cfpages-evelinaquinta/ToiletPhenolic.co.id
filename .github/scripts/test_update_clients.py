@@ -165,6 +165,22 @@ class ClientsTests(unittest.TestCase):
         self.assertIn(NEW_WA, changed)
         self.assertIn(NEW_TEL, changed)
 
+    def test_empty_image_floating_blocks_gain_contact_links(self):
+        target = self.write_fixture(
+            content=(
+                '<div class="sms-floating"><img src="wa.png" alt=""></div>'
+                '<div class="tlp-floating"><img src="tel.png" alt=""></div>'
+            )
+        )
+        (self.root / ".clients").write_text(client(), encoding="utf-8")
+        self.assertEqual(
+            MODULE.update(self.root, self.root / ".clients", False)["changed_count"], 1
+        )
+        changed = target.read_text(encoding="utf-8")
+        self.assertIn(f'href="{NEW_WA}"', changed)
+        self.assertIn(f'href="{NEW_TEL}"', changed)
+        self.assertEqual(changed.count(f"{NEW_PHONE} ({NEW_NAME})"), 2)
+
     def test_duplicate_floating_blocks_with_displays_are_all_rewritten(self):
         other_phone = "0811 1111 1111"
         other_name = "Other Fixture"

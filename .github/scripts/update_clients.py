@@ -281,7 +281,7 @@ def _transform(text: str, client: Client) -> tuple[bool, str]:
         classes = set(match.group("class").casefold().split())
         markers = classes & MARKERS
         if markers:
-            blocks.append((markers, match.group("body")))
+            blocks.append((markers, match.group("body"), match))
     if not blocks:
         nav_matches = []
         for nav in NAV_RE.finditer(text):
@@ -331,12 +331,38 @@ def _transform(text: str, client: Client) -> tuple[bool, str]:
         result = text[: nav.start()] + nav.group(0).replace(nav.group("body"), body, 1) + text[nav.end() :]
         return True, result
 
+    empty_image_blocks = all(
+        not HREF_RE.search(body)
+        and not DISPLAY_RE.search(re.sub(r"<[^>]*>", "", body))
+        and len(re.findall(r"<img\b", body, re.IGNORECASE)) == 1
+        for _, body, _ in blocks
+    )
+    if empty_image_blocks:
+        has_whatsapp = any(markers & {"whatsapp-floating", "sms-floating"} for markers, _, _ in blocks)
+        has_telephone = any("tlp-floating" in markers for markers, _, _ in blocks)
+        if not has_whatsapp or not has_telephone:
+            raise ClientsError("matched HTML has incomplete empty-image contact blocks")
+        result = text
+        for markers, body, match in reversed(blocks):
+            whatsapp_marker = bool(markers & {"whatsapp-floating", "sms-floating"})
+            telephone_marker = "tlp-floating" in markers
+            if whatsapp_marker == telephone_marker:
+                raise ClientsError("matched HTML has ambiguous empty-image contact block")
+            route = client.whatsapp if whatsapp_marker else client.telephone
+            inner = f'<a href="{route}">{body}<span>{client.phone} ({client.name})</span></a>'
+            replacement = match.group(0).replace(body, inner, 1)
+            result = result[: match.start()] + replacement + result[match.end() :]
+        if client.address is not None:
+            old_address = _one(ADDRESS_RE.findall(result), "address")
+            result = result.replace(old_address, client.address, 1)
+        return True, result
+
     displays: list[str] = []
     whatsapp: list[str] = []
     telephone: list[str] = []
     whatsapp_duplicates_safe = True
     telephone_duplicates_safe = True
-    for markers, body in blocks:
+    for markers, body, _ in blocks:
         block_displays = [
             display
             for span in SPAN_RE.findall(body)
