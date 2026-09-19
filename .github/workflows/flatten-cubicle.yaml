@@ -1,0 +1,71 @@
+name: Flatten Cubicle City Pages v1
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_base_sha:
+        description: Exact branch SHA reviewed before dispatch
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: flatten-cubicle-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  flatten:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify dispatch binding
+        env:
+          EXPECTED_BASE_SHA: ${{ inputs.expected_base_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_TYPE" == "branch" ]]
+          [[ "$EXPECTED_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_SHA" == "$EXPECTED_BASE_SHA" ]]
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - name: Run regression tests
+        run: python .github/scripts/test_normalize_cubicle.py
+
+      - name: Flatten pages and write redirects
+        id: transform
+        run: |
+          set -euo pipefail
+          python .github/scripts/normalize_cubicle.py flatten \
+            --root "$GITHUB_WORKSPACE" \
+            --paths-file "$RUNNER_TEMP/cubicle-paths.nul" \
+            --summary-file "$RUNNER_TEMP/cubicle-summary.json"
+          count=$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["changed"])' "$RUNNER_TEMP/cubicle-summary.json")
+          echo "changed=$([[ "$count" -gt 0 ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Stage exact changed paths
+        if: steps.transform.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          git add --pathspec-from-file="$RUNNER_TEMP/cubicle-paths.nul" --pathspec-file-nul
+          git diff --cached --check
+          python .github/scripts/normalize_cubicle.py verify-git \
+            --root "$GITHUB_WORKSPACE" \
+            --paths-file "$RUNNER_TEMP/cubicle-paths.nul"
+
+      - name: Commit and push
+        if: steps.transform.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Flatten cubicle city pages"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+      - name: Report no-op
+        if: steps.transform.outputs.changed != 'true'
+        run: echo "No cubicle-city directories required flattening."
