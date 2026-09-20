@@ -52,13 +52,11 @@ def add_redirects(root: Path, names: list[str], changed: set[str]) -> None:
             if line not in existing:
                 additions.append(line)
                 existing.add(line)
-    lines = additions + lines
-    new_text = "\n".join(lines)
-    if lines:
-        new_text += "\n"
-    if new_text != text:
-        write_text(path, new_text, bom)
-        changed.add("_redirects")
+    if not additions:
+        return
+    newline = "\r\n" if "\r\n" in text else "\r" if "\r" in text else "\n"
+    write_text(path, newline.join(additions) + newline + text, bom)
+    changed.add("_redirects")
 
 
 def rewrite_cubicle_links(root: Path, changed: set[str]) -> int:

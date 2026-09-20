@@ -12,7 +12,7 @@ class NormalizeCubicleTests(unittest.TestCase):
             source = root / "cubicle-bekasi"
             source.mkdir()
             (source / "index.html").write_bytes(b"hello")
-            (root / "_redirects").write_text("/*_1 /:splat 301\n", encoding="utf-8")
+            (root / "_redirects").write_bytes(b"/*_1 /:splat 301\r\n")
             changed, summary = normalize_cubicle.flatten(root)
             self.assertEqual(summary["moved"], 1)
             self.assertIn("cubicle-bekasi.html", changed)
@@ -20,6 +20,7 @@ class NormalizeCubicleTests(unittest.TestCase):
             redirects = (root / "_redirects").read_text().splitlines()
             self.assertEqual(redirects[0], "/cubicle-bekasi/ /cubicle-bekasi.html 301")
             self.assertIn("/cubicle-bekasi/index.html /cubicle-bekasi.html 301", redirects)
+            self.assertNotIn(b"\n", (root / "_redirects").read_bytes().replace(b"\r\n", b""))
             changed, summary = normalize_cubicle.flatten(root)
             self.assertEqual(summary["moved"], 0)
             self.assertEqual(changed, [])
