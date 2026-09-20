@@ -8,6 +8,7 @@ import json
 import re
 import subprocess
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 
 NAME_RE = re.compile(r"^cubicle-[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -17,6 +18,7 @@ STYLESHEET_RE = re.compile(
 )
 HREF_RE = re.compile(r"\bhref\s*=\s*([\"'])(?P<href>[^\"']+)\1", re.IGNORECASE)
 WP_CONTENT_RE = re.compile(r"(\bhref\s*=\s*[\"'])\.\./wp-content/", re.IGNORECASE)
+HTML_HREF_RE = re.compile(r"(?P<prefix>\bhref\s*=\s*)(?P<quote>[\"'])(?P<href>[^\"']+)(?P=quote)", re.IGNORECASE)
 
 
 class TransformError(RuntimeError):
@@ -59,6 +61,45 @@ def add_redirects(root: Path, names: list[str], changed: set[str]) -> None:
         changed.add("_redirects")
 
 
+def rewrite_cubicle_links(root: Path, changed: set[str]) -> int:
+    destinations = {
+        path.stem
+        for path in root.glob("cubicle-*.html")
+        if path.is_file() and not path.is_symlink() and NAME_RE.fullmatch(path.stem)
+    }
+    rewritten = 0
+
+    def replacement(match: re.Match[str]) -> str:
+        nonlocal rewritten
+        href = match.group("href")
+        parts = urlsplit(href)
+        if parts.netloc and parts.netloc.lower() != "toiletphenolic.co.id":
+            return match.group(0)
+        if parts.scheme and parts.scheme.lower() not in {"http", "https"}:
+            return match.group(0)
+        path = parts.path
+        suffix = "/index.html" if path.endswith("/index.html") else "/" if path.endswith("/") else ""
+        if not suffix:
+            return match.group(0)
+        name = path[: -len(suffix)].rsplit("/", 1)[-1]
+        if not NAME_RE.fullmatch(name) or name not in destinations:
+            return match.group(0)
+        new_path = path[: -len(suffix)] + ".html"
+        new_href = urlunsplit((parts.scheme, parts.netloc, new_path, parts.query, parts.fragment))
+        rewritten += 1
+        return f"{match.group('prefix')}{match.group('quote')}{new_href}{match.group('quote')}"
+
+    for path in sorted(root.rglob("*.html")):
+        if not path.is_file() or path.is_symlink():
+            continue
+        text, bom = read_text(path)
+        new_text = HTML_HREF_RE.sub(replacement, text)
+        if new_text != text:
+            write_text(path, new_text, bom)
+            changed.add(path.relative_to(root).as_posix())
+    return rewritten
+
+
 def flatten(root: Path) -> tuple[list[str], dict[str, int]]:
     changed: set[str] = set()
     moved = 0
@@ -99,7 +140,8 @@ def flatten(root: Path) -> tuple[list[str], dict[str, int]]:
         if path.is_file() and not path.is_symlink() and NAME_RE.fullmatch(path.stem)
     ]
     add_redirects(root, sorted(set(redirect_names + existing_names)), changed)
-    return sorted(changed), {"mode": "flatten", "moved": moved}
+    rewritten = rewrite_cubicle_links(root, changed)
+    return sorted(changed), {"mode": "flatten", "moved": moved, "rewritten": rewritten}
 
 
 def normalize_css(root: Path) -> tuple[list[str], dict[str, int]]:

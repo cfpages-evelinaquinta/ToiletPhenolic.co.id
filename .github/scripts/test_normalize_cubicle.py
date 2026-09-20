@@ -73,6 +73,52 @@ class NormalizeCubicleTests(unittest.TestCase):
             changed, summary = normalize_cubicle.normalize_css(root)
             self.assertEqual(changed, [])
 
+    def test_flatten_rewrites_only_known_cubicle_href_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "cubicle-bogor.html").write_text("destination", encoding="utf-8")
+            page = root / "blog" / "page" / "5" / "index.html"
+            page.parent.mkdir(parents=True)
+            original = (
+                "\ufeff<p>keep <a href=\"/other\">x</a></p>"
+                "<a href=\"../../../cubicle-bogor/index.html?x=1#top\">relative</a>"
+                "<a href=\"../../../cubicle-bogor/?x=2#top\">trailing</a>"
+                "<a href=\"/cubicle-bogor/index.html\">root</a>"
+                "<a href=\"https://toiletphenolic.co.id/cubicle-bogor/index.html#abs\">absolute</a>"
+                "<a href=\"https://bobrick.com/cubicle-bogor/index.html\">external</a>"
+                "<a href=\"//bobrick.com/cubicle-bogor/index.html\">external-protocol-relative</a>"
+                "<a href=\"/cubicle-missing/index.html\">missing</a>"
+                "<a href=\"/cubicle-bogor.html\">already-flat</a>"
+            )
+            page.write_text(original, encoding="utf-8-sig")
+
+            changed, summary = normalize_cubicle.flatten(root)
+
+            self.assertEqual(summary["rewritten"], 4)
+            self.assertIn("blog/page/5/index.html", changed)
+            result = page.read_text(encoding="utf-8-sig")
+            self.assertIn('href="../../../cubicle-bogor.html?x=1#top"', result)
+            self.assertIn('href="../../../cubicle-bogor.html?x=2#top"', result)
+            self.assertIn('href="/cubicle-bogor.html"', result)
+            self.assertIn('href="https://toiletphenolic.co.id/cubicle-bogor.html#abs"', result)
+            self.assertIn('href="https://bobrick.com/cubicle-bogor/index.html"', result)
+            self.assertIn('href="//bobrick.com/cubicle-bogor/index.html"', result)
+            self.assertIn('href="/cubicle-missing/index.html"', result)
+            self.assertTrue(page.read_bytes().startswith(b"\xef\xbb\xbf"))
+
+    def test_flatten_link_rewrite_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "cubicle-bogor.html").write_text("destination", encoding="utf-8")
+            page = root / "index.html"
+            page.write_text('<a href="/cubicle-bogor/">x</a>', encoding="utf-8")
+            normalize_cubicle.flatten(root)
+            first = page.read_bytes()
+            changed, summary = normalize_cubicle.flatten(root)
+            self.assertEqual(changed, [])
+            self.assertEqual(summary["rewritten"], 0)
+            self.assertEqual(page.read_bytes(), first)
+
 
 if __name__ == "__main__":
     unittest.main()
